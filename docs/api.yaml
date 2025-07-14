@@ -12,10 +12,37 @@ servers:
 
 components:
   schemas:
+    User:
+      type: object
+      required:
+        - email
+        - name
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        email:
+          type: string
+          format: email
+          maxLength: 255
+        name:
+          type: string
+          maxLength: 100
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+
     List:
       type: object
       required:
         - name
+        - user_id
       properties:
         id:
           type: string
@@ -34,6 +61,10 @@ components:
           readOnly: true
         position:
           type: integer
+        user_id:
+          type: string
+          format: uuid
+          description: "ID of the user who owns this list"
         created_at:
           type: string
           format: date-time
@@ -48,6 +79,7 @@ components:
       required:
         - title
         - list_id
+        - user_id
       properties:
         id:
           type: string
@@ -62,6 +94,10 @@ components:
         list_id:
           type: string
           format: uuid
+        user_id:
+          type: string
+          format: uuid
+          description: "ID of the user who owns this task"
         status:
           type: string
           enum: [todo, done, archived]
@@ -145,6 +181,13 @@ components:
       bearerFormat: JWT
 
   parameters:
+    ListId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     TaskId:
       name: id
       in: path
@@ -164,10 +207,210 @@ security:
   - BearerAuth: []
 
 paths:
+  /auth/login:
+    post:
+      summary: User login
+      security: []  # No authentication required for login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 8
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  refresh_token:
+                    type: string
+                  expires_in:
+                    type: integer
+                    description: "Token expiry in seconds (72h = 259200)"
+                  user:
+                    $ref: '#/components/schemas/User'
+        '401':
+          description: Invalid credentials
+
+  /auth/register:
+    post:
+      summary: User registration
+      security: []  # No authentication required for registration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - name
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                name:
+                  type: string
+                  maxLength: 100
+                password:
+                  type: string
+                  minLength: 8
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  refresh_token:
+                    type: string
+                  expires_in:
+                    type: integer
+                  user:
+                    $ref: '#/components/schemas/User'
+
+  /auth/refresh:
+    post:
+      summary: Refresh access token
+      security: []  # Uses refresh token instead
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refresh_token
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        '200':
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  expires_in:
+                    type: integer
+
+  /lists:
+    get:
+      summary: List all lists for current user
+      responses:
+        '200':
+          description: List of lists
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/List'
+    post:
+      summary: Create a new list
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  maxLength: 50
+                position:
+                  type: integer
+      responses:
+        '201':
+          description: List created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/List'
+
+  /lists/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ListId'
+    get:
+      summary: Get list details with tasks
+      responses:
+        '200':
+          description: List details
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/List'
+                  - type: object
+                    properties:
+                      tasks:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Task'
+    put:
+      summary: Update list
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  maxLength: 50
+                position:
+                  type: integer
+      responses:
+        '200':
+          description: List updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/List'
+    delete:
+      summary: Delete list
+      description: "Cannot delete system lists (daily, weekly, backlog, history)"
+      responses:
+        '204':
+          description: List deleted
+        '400':
+          description: Cannot delete system list
+
   /tasks:
     get:
       summary: List all tasks
       parameters:
+        - name: list_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: "Filter tasks by list ID"
         - name: list_type
           in: query
           schema:
@@ -196,7 +439,7 @@ paths:
           in: query
           schema:
             type: string
-            enum: [todo, done]
+            enum: [todo, done, archived]
         - name: due_before
           in: query
           schema:
@@ -223,7 +466,32 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Task'
+              type: object
+              required:
+                - title
+                - list_id
+              properties:
+                title:
+                  type: string
+                  maxLength: 100
+                description:
+                  type: string
+                list_id:
+                  type: string
+                  format: uuid
+                due_date:
+                  type: string
+                  format: date-time
+                repeat_type:
+                  type: string
+                  enum: [none, after_completion, fixed_schedule]
+                  default: none
+                repeat_value:
+                  type: integer
+                  minimum: 1
+                repeat_frequency:
+                  type: string
+                  enum: [hours, days, weeks, months, years]
       responses:
         '201':
           description: Task created
@@ -305,13 +573,14 @@ paths:
               type: object
               required:
                 - position
-                - list_type
+                - list_id
               properties:
                 position:
                   type: integer
-                list_type:
+                list_id:
                   type: string
-                  enum: [daily, weekly, backlog]
+                  format: uuid
+                  description: "Target list ID to move the task to"
       responses:
         '200':
           description: Position updated
