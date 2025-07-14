@@ -1,0 +1,418 @@
+openapi: 3.0.0
+info:
+  title: Quest API
+  description: API for Quest task management system
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Development server
+  - url: https://api.quest.app/v1
+    description: Production server
+
+components:
+  schemas:
+    List:
+      type: object
+      required:
+        - name
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 50
+        is_system:
+          type: boolean
+          description: "True for system lists (daily, weekly, backlog, history)"
+        system_type:
+          type: string
+          enum: [daily, weekly, backlog, history, custom]
+          description: "Type of system list, or 'custom' for user-created lists"
+          readOnly: true
+        position:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+
+    Task:
+      type: object
+      required:
+        - title
+        - list_id
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        title:
+          type: string
+          maxLength: 100
+        description:
+          type: string
+          description: Markdown formatted description
+        list_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [todo, done, archived]
+          default: todo
+          description: "Task status: todo (active), done (completed but visible), archived (completed and moved to history)"
+        due_date:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        completed_at:
+          type: string
+          format: date-time
+          readOnly: true
+          description: "When the task was marked as done"
+        archived_at:
+          type: string
+          format: date-time
+          readOnly: true
+          description: "When the task was moved to history (automatic for daily/weekly tasks)"
+        original_list_id:
+          type: string
+          format: uuid
+          description: "Reference to the original list where the task was created, preserved for history"
+        repeat_type:
+          type: string
+          enum: [none, after_completion, fixed_schedule]
+          description: "none: one-time task, after_completion: repeats after being done, fixed_schedule: repeats on schedule"
+          default: none
+        repeat_value:
+          type: integer
+          minimum: 1
+          description: The number of time units to repeat after
+        repeat_frequency:
+          type: string
+          enum: [hours, days, weeks, months, years]
+        position:
+          type: integer
+          description: Position in the list
+        labels:
+          type: array
+          items:
+            $ref: '#/components/schemas/Label'
+
+    Label:
+      type: object
+      required:
+        - name
+        - color
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 20
+        color:
+          type: string
+          pattern: '^#[0-9a-fA-F]{6}$'
+          description: Hexadecimal color code
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+
+    Error:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    TaskId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    LabelId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+security:
+  - BearerAuth: []
+
+paths:
+  /tasks:
+    get:
+      summary: List all tasks
+      parameters:
+        - name: list_type
+          in: query
+          schema:
+            type: string
+            enum: [daily, weekly, backlog, history]
+          description: "Filter tasks by list type"
+        - name: completed_before
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: "Filter tasks completed before this date"
+        - name: completed_after
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: "Filter tasks completed after this date"
+        - name: original_list_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: "Filter archived tasks by their original list"
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [todo, done]
+        - name: due_before
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: due_after
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: List of tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Task'
+    post:
+      summary: Create a new task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Task'
+      responses:
+        '201':
+          description: Task created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+
+  /tasks/{id}:
+    parameters:
+      - $ref: '#/components/parameters/TaskId'
+    get:
+      summary: Get task details
+      responses:
+        '200':
+          description: Task details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+    put:
+      summary: Update task details
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Task'
+      responses:
+        '200':
+          description: Task updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+    delete:
+      summary: Delete task
+      responses:
+        '204':
+          description: Task deleted
+
+  /tasks/{id}/status:
+    parameters:
+      - $ref: '#/components/parameters/TaskId'
+    patch:
+      summary: Update task status
+      description: "Mark task as done. Tasks in daily/weekly lists will be automatically archived at their respective cutoff times"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [todo, done]
+                  description: "Cannot manually set status to 'archived'. Non-recurring tasks are automatically archived. Recurring tasks are never archived and show progress until next occurrence."
+      responses:
+        '200':
+          description: Status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+
+  /tasks/{id}/position:
+    parameters:
+      - $ref: '#/components/parameters/TaskId'
+    patch:
+      summary: Update task position
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - position
+                - list_type
+              properties:
+                position:
+                  type: integer
+                list_type:
+                  type: string
+                  enum: [daily, weekly, backlog]
+      responses:
+        '200':
+          description: Position updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+
+  /labels:
+    get:
+      summary: List all labels
+      responses:
+        '200':
+          description: List of labels
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Label'
+    post:
+      summary: Create a new label
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Label'
+      responses:
+        '201':
+          description: Label created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Label'
+
+  /labels/{id}:
+    parameters:
+      - $ref: '#/components/parameters/LabelId'
+    put:
+      summary: Update label
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Label'
+      responses:
+        '200':
+          description: Label updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Label'
+    delete:
+      summary: Delete label
+      responses:
+        '204':
+          description: Label deleted
+
+  /tasks/{id}/labels:
+    parameters:
+      - $ref: '#/components/parameters/TaskId'
+    post:
+      summary: Add label to task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - label_id
+              properties:
+                label_id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Label added to task
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+
+  /tasks/{taskId}/labels/{labelId}:
+    parameters:
+      - name: taskId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: labelId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      summary: Remove label from task
+      responses:
+        '204':
+          description: Label removed from task
