@@ -1,6 +1,6 @@
 1. Product Overview [STRUCTURED_FORMAT]
 - Product name: Quest
-- Technical description: Modern Kanban-style task management system built with React and Go
+- Technical description: Modern task management system with Kanban-inspired interface built with React and Go
 - Marketing description: Streamline your daily tasks with an intuitive Kanban board that works the way you think
 - Target audience:
   * Knowledge workers (25-45, tech-savvy, value organization)
@@ -11,10 +11,10 @@
   PROBLEM -> Traditional to-do lists lack visual organization and workflow management
   IMPACT -> Tasks get forgotten or poorly prioritized
 - Main benefits:
-  * 50% faster task organization with drag-and-drop Kanban interface
-  * Zero learning curve for users familiar with board-style organization
+  * 50% faster task organization with intuitive list-based interface
+  * Zero learning curve for users familiar with task management tools
   * Real-time updates across all devices
-  * Customizable workflows to match personal or team preferences
+  * Flexible workflows with daily/weekly organization
 
 2. Technical Specifications [TECHNICAL_FORMAT]
 - General architecture:
@@ -44,19 +44,37 @@
 - Main entities:
   ```json
   {
+    "User": {
+      "attributes": [
+        "id",
+        "email",
+        "name",
+        "created_at",
+        "updated_at"
+      ],
+      "relations": ["has_many:Lists", "has_many:Tasks"],
+      "constraints": [
+        "email:required,unique,email",
+        "name:required,max=100"
+      ]
+    },
     "List": {
       "attributes": [
         "id",
         "name",
         "is_system",
+        "system_type",
         "position",
+        "user_id",
         "created_at",
         "updated_at"
       ],
-      "relations": ["has_many:Tasks"],
+      "relations": ["has_many:Tasks", "belongs_to:User"],
       "constraints": [
         "name:required,max=50",
         "is_system:boolean",
+        "system_type:in(daily,weekly,backlog,history,custom)",
+        "user_id:required,exists:users,id",
         "position:required,numeric"
       ]
     },
@@ -66,6 +84,7 @@
         "title",
         "description",
         "list_id",
+        "user_id",
         "status",
         "due_date",
         "created_at",
@@ -77,7 +96,7 @@
         "repeat_frequency",
         "position"
       ],
-      "relations": ["belongs_to:List", "has_many:Labels"],
+      "relations": ["belongs_to:List", "belongs_to:User", "many_to_many:Labels"],
       "constraints": [
         "title:required,max=100",
         "description:markdown",
@@ -87,6 +106,18 @@
         "repeat_type:in(none,after_completion,fixed_schedule)",
         "repeat_value:numeric",
         "repeat_frequency:in(hours,days,weeks,months,years)"
+      ]
+    },
+    "TaskLabel": {
+      "attributes": [
+        "task_id",
+        "label_id",
+        "created_at"
+      ],
+      "relations": ["belongs_to:Task", "belongs_to:Label"],
+      "constraints": [
+        "task_id:required,exists:tasks,id",
+        "label_id:required,exists:labels,id"
       ]
     },
     "Label": {
@@ -119,9 +150,10 @@
                                      ?completed_before=date
                                      ?completed_after=date
                                      ?original_list_id=uuid
-  POST   /api/v1/lists/:id/tasks    : Create task in list {
+  POST   /api/v1/tasks              : Create task {
                                       title*,
                                       description,
+                                      list_id*,
                                       due_date,
                                       repeat_type,
                                       repeat_value,
@@ -300,26 +332,7 @@
   * Retention: 30 days hot storage, 1 year cold storage
   * Analysis: ELK Stack (Elasticsearch, Logstash, Kibana)
 
-9. Deployment Plan [TIMELINE_FORMAT]
-- Phase 1 - MVP (30 days):
-  * Features:
-    - Basic board creation and management
-    - List and task CRUD operations
-    - Drag and drop functionality
-    - Basic user authentication
-    - Mobile-responsive design
-  * Timeline:
-    - Days 1-5: Initial project setup and architecture
-    - Days 6-15: Core backend implementation
-    - Days 16-25: Frontend development
-    - Days 26-30: Testing and bug fixes
-  * Validation criteria:
-    - All unit tests passing
-    - < 500ms average API response time
-    - Successful task operations on multiple devices
-    - Zero critical security issues
-
-10. Documentation [STRUCTURE_FORMAT]
+9. Documentation [STRUCTURE_FORMAT]
 - API:
   * OpenAPI 3.0 specification (docs/api.yaml)
     - Comprehensive API schema definitions
@@ -327,7 +340,6 @@
     - Authentication and security specifications
     - Response/Request models
   * Interactive Swagger UI documentation at /swagger
-  * Postman collection auto-generated from OpenAPI spec
   * API versioning via Accept header and URL path
 - Code:
   * Go: godoc format with examples
@@ -344,3 +356,197 @@
   * Feature documentation
   * Troubleshooting guide
   * FAQ section
+
+10. User Experience Specifications [UX_FORMAT]
+- Onboarding flow:
+  * First-time user experience:
+    - Welcome tour highlighting key features
+    - Interactive tutorial for Kanban basics
+    - Sample tasks and lists pre-populated
+    - Customization wizard for workspace setup
+  * Account setup guidance:
+    - Email verification process
+    - Profile completion checklist
+    - Workspace preferences configuration
+    - Team invitation flow (if applicable)
+- Empty states:
+  * Lists:
+    - Helpful message: "Start organizing by adding your first task"
+    - Quick-add button prominently displayed
+    - Suggested task templates
+    - Import options from other tools
+  * Boards:
+    - Welcome message with getting started tips
+    - Sample board templates
+    - Quick setup wizard
+- Error handling:
+  * User-facing error messages:
+    - Clear, non-technical language
+    - Actionable recovery steps
+    - Contact support option
+    - Error tracking ID (hidden, expandable)
+  * Common scenarios:
+    - Network connectivity issues
+    - Invalid input handling
+    - Permission denied states
+    - Concurrent edit conflicts
+- Keyboard shortcuts:
+  * Global shortcuts:
+    - New task: Cmd/Ctrl + N
+    - Quick search: Cmd/Ctrl + K
+    - Save changes: Cmd/Ctrl + S
+    - Close modal: Esc
+  * List management:
+    - Navigate lists: Alt + Arrow keys
+    - Create list: Cmd/Ctrl + Shift + L
+    - Delete list: Cmd/Ctrl + Shift + D
+  * Task management:
+    - Mark complete: Space
+    - Edit task: Enter
+    - Delete task: Delete
+    - Move task: Shift + Arrow keys
+- Notification system:
+  * Email notifications:
+    - Daily digest option
+    - Due date reminders
+    - Assignment notifications
+    - Weekly summary reports
+  * Push notifications (mobile):
+    - Due date alerts
+    - Task assignments
+    - Mention notifications
+    - Custom reminder settings
+
+11. Data Management Specifications [DATA_FORMAT]
+- Data export/import:
+  * Export formats:
+    - CSV for spreadsheet compatibility
+    - JSON for full data backup
+    - PDF for report generation
+    - iCal for calendar integration
+  * Import capabilities:
+    - CSV template with validation
+    - JSON schema validation
+    - Trello/Asana migration tools
+    - Batch import with error handling
+- Backup procedures:
+  * Automated backups:
+    - Daily incremental backups
+    - Weekly full backups
+    - 30-day retention policy
+    - Encrypted backup storage
+  * Recovery options:
+    - Point-in-time recovery
+    - Selective task restoration
+    - Bulk data recovery
+    - Emergency backup access
+- Data retention:
+  * Active data:
+    - Tasks: Indefinite
+    - Completed tasks: 1 year
+    - Archived lists: 2 years
+    - Activity logs: 90 days
+  * Archive policies:
+    - Automatic archival after 30 days completion
+    - Compressed storage format
+    - Searchable archive interface
+    - Restore from archive capability
+- Storage limits:
+  * Free tier:
+    - 1000 active tasks
+    - 5 custom lists
+    - 100MB attachment storage
+    - 30-day activity history
+  * Premium tier:
+    - Unlimited tasks
+    - Unlimited lists
+    - 10GB attachment storage
+    - 1-year activity history
+- Audit logging:
+  * Tracked events:
+    - Task creation/modification/deletion
+    - List management operations
+    - User access and authentication
+    - System configuration changes
+  * Log details:
+    - Timestamp (UTC)
+    - User identifier
+    - IP address
+    - Action details
+    - Affected resources
+
+12. Integration Capabilities [API_FORMAT]
+- Third-party integrations:
+  * Calendar systems:
+    - Google Calendar
+      * Two-way sync
+      * Due date mapping
+      * Calendar event creation
+      * Update propagation
+    - Microsoft Outlook
+      * Task synchronization
+      * Meeting scheduling
+      * Availability status
+    - Apple Calendar
+      * iCal feed generation
+      * Reminder integration
+  * Email integration:
+    - Gmail
+      * Create tasks from emails
+      * Email task updates
+      * Attachment handling
+    - Outlook
+      * Task creation via email
+      * Status update notifications
+      * Email threading
+- API rate limiting:
+  * Free tier:
+    - 1000 requests/hour
+    - 5 requests/second
+    - Burst capacity: 10 requests
+  * Premium tier:
+    - 10000 requests/hour
+    - 20 requests/second
+    - Burst capacity: 50 requests
+  * Enterprise tier:
+    - Custom limits
+    - Dedicated rate limits
+    - Priority queue
+- Webhook support:
+  * Event types:
+    - Task created/updated/deleted
+    - List modified
+    - User actions
+    - System events
+  * Delivery:
+    - HTTPS endpoints only
+    - Retry policy (3 attempts)
+    - Signature verification
+    - Payload size limits
+  * Configuration:
+    - Event filtering
+    - Custom headers
+    - Secret management
+    - Response handling
+- OAuth2 specifications:
+  * Authorization flows:
+    - Authorization code flow
+    - PKCE extension
+    - Refresh token rotation
+    - JWT support
+  * Scope definitions:
+    - read:tasks
+    - write:tasks
+    - read:lists
+    - write:lists
+    - admin:system
+  * Security:
+    - Access token expiry: 1 hour
+    - Refresh token expiry: 30 days
+    - Rate limiting per client
+    - IP-based blocking
+  * Implementation:
+    - Standard OAuth2 endpoints
+    - OpenID Connect support
+    - Multi-tenant isolation
+    - Revocation API
